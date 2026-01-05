@@ -1,7 +1,7 @@
 """
 StreamFlow ETL Job - PySpark Transformation Pipeline
 
-Reads JSON from landing zone, applies transformations, writes Parquet to gold zone.
+Reads JSON from landing zone, applies transformations, writes CSV to gold zone.
 
 Pattern: ./data/landing/*.json -> (This Job) -> ./data/gold/
 """
