@@ -24,10 +24,10 @@ def create_spark_session(
         Configured SparkSession instance
     """
     # DONE: Implement
-    spark_session = SparkSession.builder.appName(app_name).master(master)
+    spark_session_builder = SparkSession.builder.appName(app_name).master(master)
 
     if config_overrides is not None:
         for key, value in config_overrides.items():
-            spark_session = spark_session.config(key, value)
+            spark_session_builder = spark_session_builder.config(key, value)
 
-    return spark_session.getOrCreate()
+    return spark_session_builder.getOrCreate()
