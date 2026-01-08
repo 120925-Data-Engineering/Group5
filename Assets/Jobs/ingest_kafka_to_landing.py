@@ -10,6 +10,7 @@ import json
 import time
 import os
 import argparse
+from pathlib import Path
 
 
 def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
@@ -44,7 +45,6 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
            for message in messages:
                batch_messages.append(message.value)
 
-    kafka_consumer.close()
 
     #Export to file
     if batch_messages:
@@ -58,22 +58,33 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
         #Write to file
         try:
             with open(path, 'w') as file:
-                #json.dump(batch_messages, file, indent=4)
-                file.write(str(batch_messages))
+               # json.dump(batch_messages, file, indent=4)
+                #file.write(str(batch_messages))
+                for mes in batch_messages:
+                    file.write(json.dumps(mes) + '\n')
                 print(f"Wrote {len(batch_messages)} to {path}")
+
+                #COMMIT
+                #Onnly if we were able to read and write
                 kafka_consumer.commit()
+                kafka_consumer.close()
         except IOError as e:
                 print(f"Failed to write to {path}")
                 print(e)
                 return 0
     else:
         print("There are no messages")
-    kafka_consumer.close()
+    print("ksajdfhksdfjksahf")
     #Return the amount of messages processed
     return len(batch_messages)
 
 
 if __name__ == "__main__":
+    #Write to the directory
+    BASE_DIR = Path(__file__).resolve().parent
+    LANDING_DIR = (BASE_DIR / ".." / "data" / "landing").resolve()
+
+
     # DONE: Parse args and call consume_batch
     parser = argparse.ArgumentParser(description="Kafka Arguments")
     parser.add_argument("--topic", default="user_events")
@@ -81,12 +92,14 @@ if __name__ == "__main__":
     
     #/data/landing/{topic}_{timestamp}.json
     #Didn't have permissions to make directoru /opt/spark-data, had to make it manually
-    parser.add_argument("--output_path", default="/opt/spark-data")
+    #parser.add_argument("--output_path", default="/opt/spark-data")
+    parser.add_argument("--output_path", default=LANDING_DIR)
     
     args = parser.parse_args()
 
-    consume_batch(
+    message_count = consume_batch(
         topic = args.topic,
         batch_duration_sec=args.batch_duration,
         output_path=args.output_path
     )
+    print(message_count)
