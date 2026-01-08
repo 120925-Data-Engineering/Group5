@@ -28,8 +28,8 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
     kafka_consumer = KafkaConsumer(
            topic, #Topic we are consuming from
            bootstrap_servers=['localhost:9094'], #This needs to match the yaml file. Should change to var
-           enable_auto_commit=True, #idk if this is necessary
-           value_deserializer = lambda v: json.loads(v.decode('utf-8'))
+           value_deserializer = lambda v: json.loads(v.decode('utf-8')),
+           group_id = f"{topic}_id"
            )
 
    #Consume for batch_duration_sec
@@ -37,10 +37,10 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
     start_time = time.time()
     end_time = start_time + batch_duration_sec
 
-    while time.time() < end_time():
+    while time.time() < end_time:
        interval_msg = kafka_consumer.poll(timeout_ms=1000)
 
-       for messages in interval_msg.items():
+       for partition, messages in interval_msg.items():
            for message in messages:
                batch_messages.append(message.value)
 
@@ -58,7 +58,8 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
         #Write to file
         try:
             with open(path, 'w') as file:
-                json.dump(batch_messages, file, indent=4)
+                #json.dump(batch_messages, file, indent=4)
+                file.write(str(batch_messages))
                 print(f"Wrote {len(batch_messages)} to {path}")
                 kafka_consumer.commit()
         except IOError as e:
@@ -75,11 +76,12 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
 if __name__ == "__main__":
     # DONE: Parse args and call consume_batch
     parser = argparse.ArgumentParser(description="Kafka Arguments")
-    parser.add_argument("--topic", required=True)
-    parser.add_argument("--batch_duration", required=True, type=int)
+    parser.add_argument("--topic", default="user_events")
+    parser.add_argument("--batch_duration", type=int, default=5)
     
     #/data/landing/{topic}_{timestamp}.json
-    parser.add_argument("--output_path", default="../data/landing")
+    #Didn't have permissions to make directoru /opt/spark-data, had to make it manually
+    parser.add_argument("--output_path", default="/opt/spark-data")
     
     args = parser.parse_args()
 
