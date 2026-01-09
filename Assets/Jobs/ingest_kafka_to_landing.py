@@ -67,14 +67,14 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
                 #COMMIT
                 #Onnly if we were able to read and write
                 kafka_consumer.commit()
-                kafka_consumer.close()
         except IOError as e:
                 print(f"Failed to write to {path}")
                 print(e)
                 return 0
     else:
         print("There are no messages")
-    print("ksajdfhksdfjksahf")
+    print("Kafka Consumer Finished")
+    kafka_consumer.close()
     #Return the amount of messages processed
     return len(batch_messages)
 
