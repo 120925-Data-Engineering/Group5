@@ -1,4 +1,4 @@
-This is what the json should look like:
+This is what the user_events messages json look like 
 
 {"event_id": "95230638-43c3-4fb1-a777-a8d7fb159f69", "user_id": "c9e55c28", "session_id": "57f9295e-6c3", "event_type": "add_to_cart", "timestamp": "2026-01-08T19:20:37.517242Z", "page": "settings", "device": "desktop", "browser": "Safari", "ip_address": "49.39.51.122", "country": "TH", "city": "Williamsshire", "product_id": "PROD_2666", "quantity": 5}
 {

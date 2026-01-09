@@ -113,7 +113,7 @@ def create_producer(bootstrap_servers):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate mock transaction events to Kafka")
-    parser.add_argument("--bootstrap-servers", default="localhost:9092", help="Kafka bootstrap servers")
+    parser.add_argument("--bootstrap-servers", default="localhost:9094", help="Kafka bootstrap servers")
     parser.add_argument("--topic", default="transaction_events", help="Kafka topic name")
     parser.add_argument("--interval", type=float, default=2.0, help="Seconds between events")
     parser.add_argument("--count", type=int, default=None, help="Number of events to generate (infinite if not set)")
