@@ -10,6 +10,7 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 import argparse
 from spark_session_factory import create_spark_session
+from pathlib import Path
 
 
 def run_etl(spark: SparkSession, input_path: str, output_path: str):
@@ -31,7 +32,7 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
     
     #Transformations
     #TODO: Make actual transformation to the data
-    df = df.dropna()
+    #df = df.dropna()
 
     #Output
     #Write csv to gold zone
@@ -43,11 +44,23 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
 
 
 if __name__ == "__main__":
+
+    #Copy pasted from ingest_kafka_to_landing but with different path
+        #Write to the directory
+    BASE_DIR = Path(__file__).resolve().parent
+    LOADING_DIR = (BASE_DIR / ".." / "data" / "landing").resolve()
+    LANDING_DIR = (BASE_DIR / ".." / "data" / "gold").resolve()
+
+
     # DONE: Create SparkSession, parse args, run ETL
     parser = argparse.ArgumentParser(description="Spark Arguments")
     #spark session arguments
-    parser.add_argument("--app_name", default="app_name")
-    parser.add_argument("--master", default="local[*]")
+    parser.add_argument("--app_name",
+                         default="app_name")
+    
+    parser.add_argument("--master",
+                         default="local[*]")
+    
     #handle config overrides 
     parser.add_argument("--conf",
                          action="append",
@@ -58,8 +71,8 @@ if __name__ == "__main__":
 
     # input path, output path
     #input_path: Landing zone path (e.g., '/opt/spark-data/landing/*.json')
-    parser.add_argument("--input_path", required=True) 
-    parser.add_argument("--output_path", default="../data/gold")
+    parser.add_argument("--input_path", default=LOADING_DIR) 
+    parser.add_argument("--output_path", default=LANDING_DIR)
 
     args = parser.parse_args()
     
@@ -79,12 +92,14 @@ if __name__ == "__main__":
     if not config_overrides:
         config_overrides = None
 
+    #This can be created with defaults
     spark_session = create_spark_session(
         app_name=args.app_name,
         master=args.master,
         config_overrides=config_overrides
     )
 
+    #This can also run with defaults
     run_etl(
         spark_session,
         input_path= args.input_path,
