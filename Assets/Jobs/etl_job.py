@@ -32,14 +32,40 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
     #Transformations
     #TODO: Make actual transformation to the data
     df = df.dropna()
+    if 'transaction' in input_path: # do transaction calculations here
+        purchase_df=df.groupBy('user_id').agg(
+              F.count('*').alias('event_count'),
+              F.count(F.when(F.col('TRANSACTION_TYPES')=='purchase',1)).alias('purchase_count'),
+              F.count(F.when(F.col('STATUSES')=='completed',1)).alias('completed_purhases')
+         )
+        print(f" Count of all completed purchases: {purchase_df.count()}")
+            #Output
+        #Write csv to gold zone
+        purchase_df.write.csv(output_path,
+                    mode="append",
+                    header=True
+                    )
 
-    #Output
-    #Write csv to gold zone
-    df.write.csv(output_path,
-                 mode="append",
-                 header=True
-                 )
-    
+    elif 'user' in input_path: # do user calculations here
+        user_activity_df=df.groupBy('user_id').agg(
+              F.count('*').alias('event_count'),
+              F.count(F.when(F.col('EVENT_TYPES')=='search',1)).alias('search_count'),
+              F.count(F.when(F.col('EVENT_TYPES')=='add_to_cart',1)).alias('amount_added')
+         )
+        print(f" User activity records: {user_activity_df.count()}")
+        #Output
+        #Write csv to gold zone
+        user_activity_df.write.csv(output_path,
+                    mode="append",
+                    header=True
+                    )
+
+    # #Output
+    # #Write csv to gold zone
+    # df.write.csv(output_path,
+    #              mode="append",
+    #              header=True
+    #              )
 
 
 if __name__ == "__main__":
