@@ -82,7 +82,6 @@ def main():
     parser.add_argument("--interval", type=float, default=1.0, help="Seconds between events")
     parser.add_argument("--count", type=int, default=None, help="Number of events to generate (infinite if not set)")
     args = parser.parse_args()
-    
     producer = create_producer(args.bootstrap_servers)
     print(f"Connected to Kafka at {args.bootstrap_servers}")
     print(f"Publishing to topic: {args.topic}")
