@@ -34,7 +34,6 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
     print(f'Input path: {input_path}')
     #Transformations
     #TODO: Make actual transformation to the data
-<<<<<<< HEAD
     if 'transaction_type' in cols: # do transaction calculations here
         print("Starting transaction transformations: ")
         purchase_df=df.groupBy('user_id').agg(
@@ -50,9 +49,6 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
                     header=True
                     )
         print(purchase_df.head(10))
-=======
-    #df = df.dropna()
->>>>>>> pedroAirflow
 
     if 'event_type' in cols: # do user calculations here
         print('Starting user transformations: ')
@@ -107,14 +103,11 @@ if __name__ == "__main__":
 
     # input path, output path
     #input_path: Landing zone path (e.g., '/opt/spark-data/landing/*.json')
-<<<<<<< HEAD
     parser.add_argument("--input_path", default='../assets/data/landing/*.json')
                         #'../assets/data/landing/*.json') 
     parser.add_argument("--output_path", default="../assets/data/gold")
-=======
-    parser.add_argument("--input_path", default=LOADING_DIR) 
-    parser.add_argument("--output_path", default=LANDING_DIR)
->>>>>>> pedroAirflow
+    # parser.add_argument("--input_path", default=LOADING_DIR) 
+    # parser.add_argument("--output_path", default=LANDING_DIR)
 
     args = parser.parse_args()
     
