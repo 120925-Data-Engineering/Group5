@@ -28,7 +28,7 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
     # DONE: Implement
     kafka_consumer = KafkaConsumer(
            topic, #Topic we are consuming from
-           bootstrap_servers=['localhost:9094'], #This needs to match the yaml file. Should change to var
+           bootstrap_servers=['kafka:9092'], #This needs to match the yaml file. Should change to var
            value_deserializer = lambda v: json.loads(v.decode('utf-8')),
            group_id = f"{topic}_id"
            )
@@ -81,9 +81,10 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
 
 if __name__ == "__main__":
     #Write to the directory
-    BASE_DIR = Path(__file__).resolve().parent
-    LANDING_DIR = (BASE_DIR / ".." / "data" / "landing").resolve()
-
+    # BASE_DIR = Path(__file__).resolve().parent
+    # LANDING_DIR = (BASE_DIR / ".." / "data" / "landing").resolve()
+    BASE_DIR = '/opt'
+    LANDING_DIR = f"{BASE_DIR}/spark-data/landing"
 
     # DONE: Parse args and call consume_batch
     parser = argparse.ArgumentParser(description="Kafka Arguments")

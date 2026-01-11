@@ -44,8 +44,11 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
         print(f" Count of all completed purchases: {purchase_df.count()}")
             #Output
         #Write csv to gold zone
+        # Mode was append, changed to overwrite to fix temp issue
+        #########################################################
+        # It is within our best interest to bugfix this; currently works
         purchase_df.write.csv(output_path,
-                    mode="append",
+                    mode="overwrite",
                     header=True
                     )
         print(purchase_df.head(10))

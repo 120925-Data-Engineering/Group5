@@ -13,5 +13,5 @@ if ! [[ "$SECONDS" =~ ^[0-9]+$ ]]; then
 fi
 
 echo "Running User Event Consumer for $SECONDS seconds..."
-python3 Jobs/ingest_kafka_to_landing.py --topic user_events
+python3 /opt/spark-jobs/ingest_kafka_to_landing.py --topic user_events
 
