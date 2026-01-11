@@ -15,16 +15,17 @@ default_args = {
     'retries': 3,
     'retry_delay': timedelta(minutes=1)
 }
+# BASE_DIR = Path(__file__).resolve().parent.parent   # Assets folder
 
-BASE_DIR = Path(__file__).resolve().parent.parent   # Assets folder
-BASH_DIR = BASE_DIR / "bash"
-JOBS_DIR = BASE_DIR / "jobs"
+# rewriting the directories to match the airflow directory in docker!!!!!!
+BASE_DIR = '/opt'
+JOBS_DIR = BASE_DIR / "spark-jobs"
 
 KAFKA_TIMER = 30 #Argument for bash scripts for how long they run for
 
 # Creating a function to validate output in the gold zone
 def validate_outputs(**context):
-    gold_dir = BASE_DIR / "data" / "gold"
+    gold_dir = BASE_DIR / "spark-data" / "gold"
     files = list(gold_dir.glob("*.csv"))
 
     if not files:
@@ -54,13 +55,13 @@ with DAG(
     # User events
     kafka_user_events = BashOperator(
         task_id="ingest_user_events",
-        bash_command=f"bash {BASH_DIR / 'user_consumer.sh'} {KAFKA_TIMER}",
+        bash_command=f"bash {JOBS_DIR / 'user_consumer.sh'} {KAFKA_TIMER}",
     )
 
     # Transaction events
     kafka_transaction_events = BashOperator(
         task_id="ingest_transaction_events",
-        bash_command=f"bash {BASH_DIR / 'transaction_consumer.sh'} {KAFKA_TIMER}",
+        bash_command=f"bash {JOBS_DIR / 'transaction_consumer.sh'} {KAFKA_TIMER}",
     )
 
     # Spark ETL job
@@ -69,8 +70,8 @@ with DAG(
         bash_command=(
             f"spark-submit "
             f"{JOBS_DIR / 'etl_job.py'} "
-            f"--input_path {BASE_DIR / 'data' / 'landing' / '*.json'} "
-            f"--output_path {BASE_DIR / 'data' / 'gold'}"
+            f"--input_path {BASE_DIR / 'spark-data' / 'landing' / '*.json'} "
+            f"--output_path {BASE_DIR / 'spark-data' / 'gold'}"
         ),
     )
     
