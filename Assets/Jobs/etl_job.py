@@ -10,6 +10,7 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 import argparse
 from spark_session_factory import create_spark_session
+from pathlib import Path
 
 
 def run_etl(spark: SparkSession, input_path: str, output_path: str):
@@ -33,6 +34,7 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
     print(f'Input path: {input_path}')
     #Transformations
     #TODO: Make actual transformation to the data
+<<<<<<< HEAD
     if 'transaction_type' in cols: # do transaction calculations here
         print("Starting transaction transformations: ")
         purchase_df=df.groupBy('user_id').agg(
@@ -48,6 +50,9 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
                     header=True
                     )
         print(purchase_df.head(10))
+=======
+    #df = df.dropna()
+>>>>>>> pedroAirflow
 
     if 'event_type' in cols: # do user calculations here
         print('Starting user transformations: ')
@@ -75,11 +80,23 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
 
 
 if __name__ == "__main__":
+
+    #Copy pasted from ingest_kafka_to_landing but with different path
+        #Write to the directory
+    BASE_DIR = Path(__file__).resolve().parent
+    LOADING_DIR = (BASE_DIR / ".." / "data" / "landing").resolve()
+    LANDING_DIR = (BASE_DIR / ".." / "data" / "gold").resolve()
+
+
     # DONE: Create SparkSession, parse args, run ETL
     parser = argparse.ArgumentParser(description="Spark Arguments")
     #spark session arguments
-    parser.add_argument("--app_name", default="app_name")
-    parser.add_argument("--master", default="local[*]")
+    parser.add_argument("--app_name",
+                         default="app_name")
+    
+    parser.add_argument("--master",
+                         default="local[*]")
+    
     #handle config overrides 
     parser.add_argument("--conf",
                          action="append",
@@ -90,9 +107,14 @@ if __name__ == "__main__":
 
     # input path, output path
     #input_path: Landing zone path (e.g., '/opt/spark-data/landing/*.json')
+<<<<<<< HEAD
     parser.add_argument("--input_path", default='../assets/data/landing/*.json')
                         #'../assets/data/landing/*.json') 
     parser.add_argument("--output_path", default="../assets/data/gold")
+=======
+    parser.add_argument("--input_path", default=LOADING_DIR) 
+    parser.add_argument("--output_path", default=LANDING_DIR)
+>>>>>>> pedroAirflow
 
     args = parser.parse_args()
     
@@ -112,12 +134,14 @@ if __name__ == "__main__":
     if not config_overrides:
         config_overrides = None
 
+    #This can be created with defaults
     spark_session = create_spark_session(
         app_name=args.app_name,
         master=args.master,
         config_overrides=config_overrides
     )
 
+    #This can also run with defaults
     run_etl(
         spark_session,
         input_path= args.input_path,

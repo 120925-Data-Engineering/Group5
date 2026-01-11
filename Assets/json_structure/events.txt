@@ -1,0 +1,43 @@
+User Events
+    event = {
+        "event_id": fake.uuid4(),
+        "user_id": user_id,
+        "session_id": session_id,
+        "event_type": event_type,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "page": random.choice(PAGES),
+        "device": random.choice(DEVICES),
+        "browser": random.choice(BROWSERS),
+        "ip_address": fake.ipv4(),
+        "country": fake.country_code(),
+        "city": fake.city(),
+    }
+
+Transaction Events 
+    event = {
+        "transaction_id": fake.uuid4(),
+        "user_id": user_id,
+        "transaction_type": transaction_type,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "status": random.choices(STATUSES, weights=[0.05, 0.88, 0.05, 0.02])[0],
+        "payment_method": random.choice(PAYMENT_METHODS),
+        "currency": random.choice(CURRENCIES),
+        "products": products,
+        "subtotal": round(subtotal, 2),
+        "tax": tax,
+        "total": total,
+        "billing_address": {
+            "street": fake.street_address(),
+            "city": fake.city(),
+            "state": fake.state_abbr(),
+            "zip_code": fake.zipcode(),
+            "country": fake.country_code()
+        },
+        "shipping_address": {
+            "street": fake.street_address(),
+            "city": fake.city(),
+            "state": fake.state_abbr(),
+            "zip_code": fake.zipcode(),
+            "country": fake.country_code()
+        }
+    }
