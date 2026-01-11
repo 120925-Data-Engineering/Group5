@@ -23,24 +23,56 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
         output_path: Gold zone path (e.g., '/opt/spark-data/gold')
     """
     # Done: Implement
+    # inferSchema=True   -- chatGPT says Spark always infers schema for JSON so this option doesn't exist
 
     #Read json data into df
+    print('Reading json into a df for transformations: ')
     df = spark.read.json(
-         input_path,
-         inferSchema=True
+         input_path
          )
-    
+    cols=df.columns
+    print(f'Input path: {input_path}')
     #Transformations
     #TODO: Make actual transformation to the data
-    #df = df.dropna()
+    if 'transaction_type' in cols: # do transaction calculations here
+        print("Starting transaction transformations: ")
+        purchase_df=df.groupBy('user_id').agg(
+              F.count('*').alias('event_count'),
+              F.count(F.when(F.col('transaction_type')=='purchase',1)).alias('purchase_count'),
+              F.count(F.when(F.col('status')=='completed',1)).alias('completed_purhases')
+        )
+        print(f" Count of all completed purchases: {purchase_df.count()}")
+            #Output
+        #Write csv to gold zone
+        purchase_df.write.csv(output_path,
+                    mode="append",
+                    header=True
+                    )
+        print(purchase_df.head(10))
 
-    #Output
-    #Write csv to gold zone
-    df.write.csv(output_path,
-                 mode="append",
-                 header=True
-                 )
-    
+    if 'event_type' in cols: # do user calculations here
+        print('Starting user transformations: ')
+        user_activity_df=df.groupBy('user_id').agg(
+              F.count('*').alias('event_count'),
+              F.count(F.when(F.col('event_type')=='search',1)).alias('search_count'),
+              F.count(F.when(F.col('event_type')=='add_to_cart',1)).alias('amount_added')
+        )
+        print(f" User activity records: {user_activity_df.count()}")
+        #Output
+        #Write csv to gold zone
+        user_activity_df.write.csv(output_path,
+                    mode="append",
+                    header=True
+                    )
+        print(user_activity_df.head(10))
+    else:
+         print('No matching schema found.')
+    # #Output
+    # #Write csv to gold zone
+    # df.write.csv(output_path,
+    #              mode="append",
+    #              header=True
+    #              )
 
 
 if __name__ == "__main__":
@@ -71,8 +103,9 @@ if __name__ == "__main__":
 
     # input path, output path
     #input_path: Landing zone path (e.g., '/opt/spark-data/landing/*.json')
-    parser.add_argument("--input_path", default=LOADING_DIR) 
-    parser.add_argument("--output_path", default=LANDING_DIR)
+    parser.add_argument("--input_path", default='../assets/data/landing/*.json')
+                        #'../assets/data/landing/*.json') 
+    parser.add_argument("--output_path", default="../assets/data/gold")
 
     args = parser.parse_args()
     
