@@ -22,11 +22,11 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
         output_path: Gold zone path (e.g., '/opt/spark-data/gold')
     """
     # Done: Implement
+    # inferSchema=True   -- chatGPT says Spark always infers schema for JSON so this option doesn't exist
 
     #Read json data into df
     df = spark.read.json(
-         input_path,
-         inferSchema=True
+         input_path
          )
     
     #Transformations
