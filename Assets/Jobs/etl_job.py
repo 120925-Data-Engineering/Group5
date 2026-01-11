@@ -25,19 +25,21 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
     # inferSchema=True   -- chatGPT says Spark always infers schema for JSON so this option doesn't exist
 
     #Read json data into df
+    print('Reading json into a df for transformations: ')
     df = spark.read.json(
          input_path
          )
-    
+    cols=df.columns
+    print(f'Input path: {input_path}')
     #Transformations
     #TODO: Make actual transformation to the data
-    df = df.dropna()
-    if 'transaction' in input_path: # do transaction calculations here
+    if 'transaction_type' in cols: # do transaction calculations here
+        print("Starting transaction transformations: ")
         purchase_df=df.groupBy('user_id').agg(
               F.count('*').alias('event_count'),
-              F.count(F.when(F.col('TRANSACTION_TYPES')=='purchase',1)).alias('purchase_count'),
-              F.count(F.when(F.col('STATUSES')=='completed',1)).alias('completed_purhases')
-         )
+              F.count(F.when(F.col('transaction_type')=='purchase',1)).alias('purchase_count'),
+              F.count(F.when(F.col('status')=='completed',1)).alias('completed_purhases')
+        )
         print(f" Count of all completed purchases: {purchase_df.count()}")
             #Output
         #Write csv to gold zone
@@ -45,13 +47,15 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
                     mode="append",
                     header=True
                     )
+        print(purchase_df.head(10))
 
-    elif 'user' in input_path: # do user calculations here
+    if 'event_type' in cols: # do user calculations here
+        print('Starting user transformations: ')
         user_activity_df=df.groupBy('user_id').agg(
               F.count('*').alias('event_count'),
-              F.count(F.when(F.col('EVENT_TYPES')=='search',1)).alias('search_count'),
-              F.count(F.when(F.col('EVENT_TYPES')=='add_to_cart',1)).alias('amount_added')
-         )
+              F.count(F.when(F.col('event_type')=='search',1)).alias('search_count'),
+              F.count(F.when(F.col('event_type')=='add_to_cart',1)).alias('amount_added')
+        )
         print(f" User activity records: {user_activity_df.count()}")
         #Output
         #Write csv to gold zone
@@ -59,7 +63,9 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
                     mode="append",
                     header=True
                     )
-
+        print(user_activity_df.head(10))
+    else:
+         print('No matching schema found.')
     # #Output
     # #Write csv to gold zone
     # df.write.csv(output_path,
@@ -84,8 +90,9 @@ if __name__ == "__main__":
 
     # input path, output path
     #input_path: Landing zone path (e.g., '/opt/spark-data/landing/*.json')
-    parser.add_argument("--input_path", required=True) 
-    parser.add_argument("--output_path", default="../data/gold")
+    parser.add_argument("--input_path", default='../assets/data/landing/*.json')
+                        #'../assets/data/landing/*.json') 
+    parser.add_argument("--output_path", default="../assets/data/gold")
 
     args = parser.parse_args()
     
