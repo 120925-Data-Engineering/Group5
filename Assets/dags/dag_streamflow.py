@@ -12,6 +12,8 @@ from pathlib import Path
 default_args = {
     'owner': 'student',
     # TODO: Add retry logic, email alerts, etc.
+    'retries': 3,
+    'retry_delay': timedelta(minutes=1)
 }
 
 BASE_DIR = Path(__file__).resolve().parent.parent   # Assets folder
