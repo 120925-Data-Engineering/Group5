@@ -47,6 +47,8 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
         # Mode was append, changed to overwrite to fix temp issue
         #########################################################
         # It is within our best interest to bugfix this; currently works
+        # spark doesn't have permissions inside of airflow to change files
+        # so we had to change to overwrite instead of append
         purchase_df.write.csv(output_path,
                     mode="overwrite",
                     header=True
