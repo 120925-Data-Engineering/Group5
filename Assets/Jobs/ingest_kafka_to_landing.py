@@ -11,7 +11,12 @@ import time
 import os
 import argparse
 from pathlib import Path
+from airflow.models import TaskInstance
+from airflow.utils.session import create_session
 
+dag_id = ""
+task_id = ""
+run_id = ""
 
 def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
     """
@@ -67,12 +72,27 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
                 #COMMIT
                 #Onnly if we were able to read and write
                 kafka_consumer.commit()
+
+                #Set XCom variable for spark to be able to pull             
+                with create_session() as session:
+                    ti = TaskInstance.get_task_instance(
+                        dag_id=dag_id,
+                        task_id=task_id,
+                        run_id=run_id,
+                        map_index = -1,
+                        session=session
+                    )
+                    if ti is None:
+                        raise RuntimeError(f"No TaskInstance found for dag_id={dag_id} task_id={task_id} run_id={run_id}")
+                    ti.xcom_push(key=f"{topic}_path", value=path, session=session)
+
         except IOError as e:
-                print(f"Failed to write to {path}")
-                print(e)
-                return 0
+                    print(f"Failed to write to {path}")
+                    print(e)
+                    return 0
     else:
         print("There are no messages")
+            
     print("Kafka Consumer Finished")
     kafka_consumer.close()
     #Return the amount of messages processed
@@ -95,8 +115,17 @@ if __name__ == "__main__":
     #Didn't have permissions to make directoru /opt/spark-data, had to make it manually
     #parser.add_argument("--output_path", default="/opt/spark-data")
     parser.add_argument("--output_path", default=LANDING_DIR)
+    parser.add_argument("--dag_id", required=True)
+    parser.add_argument("--task_id", required=True)
+    parser.add_argument("--run_id", required=True)
     
     args = parser.parse_args()
+
+    dag_id= args.dag_id
+    task_id = args.task_id
+    run_id = args.run_id
+    if(dag_id == "" or task_id == "" or run_id == ""):
+        print("Did not receive metadata correctly")
 
     message_count = consume_batch(
         topic = args.topic,
@@ -104,3 +133,4 @@ if __name__ == "__main__":
         output_path=args.output_path
     )
     print(message_count)
+
