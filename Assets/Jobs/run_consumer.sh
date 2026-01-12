@@ -19,8 +19,6 @@ if ! [[ "$SECONDS" =~ ^[0-9]+$ ]]; then
 fi
 
 echo "Running User Transaction Consumer for $SECONDS seconds..."
-#python3 /opt/spark-jobs/ingest_kafka_to_landing.py --topic transaction_events --batch_duration $1 --dag_id $2 --task_id $3 --run_id $4
-
 #Was having issues with run_id 
 python3 /opt/spark-jobs/ingest_kafka_to_landing.py \
   --topic "$1" \
