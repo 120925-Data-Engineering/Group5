@@ -55,14 +55,17 @@ with DAG(
     # User events
     kafka_user_events = BashOperator(
         task_id="ingest_user_events",
-        bash_command=f"bash {JOBS_DIR}/user_consumer.sh {KAFKA_TIMER}",
+        #bash_command=f"bash {JOBS_DIR}/user_consumer.sh {KAFKA_TIMER}",
+        bash_command=f"bash {JOBS_DIR}/run_consumer.sh transaction_events {KAFKA_TIMER} {{ dag.dag_id }} {{ task.task_id }} {{ run_id }}",
     )
 
     # Transaction events
     kafka_transaction_events = BashOperator(
         task_id="ingest_transaction_events",
-        bash_command=f"bash {JOBS_DIR}/transaction_consumer.sh {KAFKA_TIMER}",
+        bash_command=f"bash {JOBS_DIR}/run_consumer.sh user_events {KAFKA_TIMER} {{ dag.dag_id }} {{ task.task_id }} {{ run_id }}",
     )
+    # These set xcom variables for the new json files it created
+    # xcom(k,v) = (f"{topic}_json", f"{path}{filename}") 
 
     # Spark ETL job
     etl_job = BashOperator(
