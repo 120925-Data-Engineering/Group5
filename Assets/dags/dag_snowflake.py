@@ -27,8 +27,8 @@ snow_conn = "snowflake_connection"
 
 # Maps CSV file patterns to their corresponding Bronze table names
 CSV_TO_TABLE = {
-    'user_events*.csv': 'raw_user_events',
-    'transactions*.csv': 'raw_transactions',
+    'user_events/part-*.csv': 'raw_user_events',
+    'transactions/part-*.csv': 'raw_transactions',
     'products*.csv': 'raw_products',
     'customers*.csv': 'raw_customers',
 }
@@ -37,11 +37,26 @@ CSV_TO_TABLE = {
 def load_to_snowflake(**context):
     """Upload Gold Zone CSVs to Snowflake Bronze tables."""
     
+    if not os.path.exists(GOLD_ZONE_PATH):
+        raise ValueError(f"CRITICAL ERROR: Path {GOLD_ZONE_PATH} does not exist on this worker.")
+    
+    print(f"Listing contents of {GOLD_ZONE_PATH}:")
+    files_in_dir = os.listdir(GOLD_ZONE_PATH)
+    print(files_in_dir)
+    
+    if not files_in_dir:
+        print("WARNING: Directory is empty.")
+
     # SnowflakeHook reads connection details from Airflow Connection 'snowflake_default'
     hook = SnowflakeHook(snowflake_conn_id=snow_conn)
     conn = hook.get_conn()
     cursor = conn.cursor()
+
+
     cursor.execute("USE WAREHOUSE COMPUTE_WH")
+    cursor.execute("USE DATABASE STREAMFLOW_DW")
+    cursor.execute("USE SCHEMA BRONZE")
+
     for pattern, table in CSV_TO_TABLE.items():
         # Find all CSVs matching this pattern (e.g., user_events_001.csv, user_events_002.csv)
         for csv_file in glob.glob(os.path.join(GOLD_ZONE_PATH, pattern)):

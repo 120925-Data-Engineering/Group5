@@ -26,15 +26,18 @@ KAFKA_TIMER = 30 #Argument for bash scripts for how long they run for
 # Creating a function to validate output in the gold zone
 def validate_outputs(**context):
     gold_dir = Path(f"{BASE_DIR}/spark-data/gold")
-    files = list(gold_dir.glob("*.csv"))
+    
+    # Changed .glob() to .rglob() to search RECURSIVELY in subfolders
+    files = list(gold_dir.rglob("*.csv"))
 
     if not files:
-        raise FileNotFoundError("No CSV files found in gold zone")
+        # Added debug info to show where it looked
+        raise FileNotFoundError(f"No CSV files found in {gold_dir} or its subfolders.")
 
-    print("Validation successful:")
+    print(f"Validation successful. Found {len(files)} files:")
     for f in files:
-        print(f" - {f}")
-
+        # Prints path relative to gold folder (e.g. 'user_events/part-000.csv')
+        print(f" - {f.relative_to(gold_dir)}")
 
 with DAG(
     dag_id='streamflow_main',
