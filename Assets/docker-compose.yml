@@ -142,6 +142,7 @@ services:
       context: .
       dockerfile: Dockerfile.airflow
     container_name: streamflow-airflow
+    user: root #permission issues
     ports:
       - "8082:8080"
     environment:
@@ -154,6 +155,7 @@ services:
       - _AIRFLOW_WWW_USER_CREATE=true
       - _AIRFLOW_WWW_USER_USERNAME=admin
       - _AIRFLOW_WWW_USER_PASSWORD=admin
+      - AIRFLOW_CONN_SNOWFLAKE_CONNECTION=snowflake://pedroalvarez3279:Pfa0009pfa0009@YAC09432/?account=euc95329.us-east-1&warehouse=WH&database=STREAMFLOW_DB&schema=SCHEMA&role=ACCOUNTADMIN
 
     volumes:
       - ./dags:/opt/airflow/dags
