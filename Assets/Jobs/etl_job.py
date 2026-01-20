@@ -46,7 +46,7 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
         print(purchase_df.head(10))
 
     # --- LOGIC FOR USER EVENTS ---
-    elif 'event_type' in cols:  # Changed to elif to avoid "No matching schema" error on transaction files
+    if 'event_type' in cols:  # Changed to elif to avoid "No matching schema" error on transaction files
         print('Starting user transformations: ')
         user_activity_df = df.groupBy('user_id').agg(
               F.count('*').alias('event_count'),
