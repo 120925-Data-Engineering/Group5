@@ -89,5 +89,4 @@ with DAG(
 
 
     # DONE: Set dependencies
-    # [kafka_user_events, kafka_transaction_events] >> 
-    etl_job >> validate_outputs_task
+    [kafka_user_events, kafka_transaction_events] >> etl_job >> validate_outputs_task
