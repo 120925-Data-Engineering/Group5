@@ -17,6 +17,7 @@ Prerequisites:
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 from datetime import datetime
 import os
 import glob
@@ -89,6 +90,23 @@ with DAG(
     load_task = PythonOperator(
         task_id='load_to_snowflake',
         python_callable=load_to_snowflake,
+    )
+    # putting into silver layer
+
+    merge_silver = SnowflakeOperator(
+        task_id="merge_silver_user_events",
+        sql="sql/merge_user_events.sql",  # external file with the MERGE
+        params={
+            "bronze_schema": "STREAMFLOW_DW.BRONZE",
+            "silver_schema": "STREAMFLOW_DW.SILVER",
+        },
+        snowflake_conn_id="snowflake_default",
+    )
+
+    build_gold = SnowflakeOperator(
+        task_id="build_gold_user_metrics",
+        sql="sql/gold_user_metrics.sql",
+        snowflake_conn_id="snowflake_default",
     )
 
     load_task
