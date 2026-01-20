@@ -22,26 +22,58 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
     
     try:
         trans_df = spark.read.json(trans_input)
-        
-        # specific check to ensure we actually have data and the column we expect
+    
         if 'transaction_type' in trans_df.columns:
             print("Starting transaction transformations: ")
-            purchase_df = trans_df.groupBy('user_id').agg(
-                  F.count('*').alias('event_count'),
-                  F.count(F.when(F.col('transaction_type')=='purchase', 1)).alias('purchase_count'),
-                  F.count(F.when(F.col('status')=='completed', 1)).alias('completed_purchases')
+            # Line items can have multiple values
+            exploded_trans_df = trans_df.withColumn("item", F.explode(F.col("line_items")))
+            
+            purchase_df = exploded_trans_df.select(
+                F.col("transaction_id"),
+                F.col("user_id"),
+                F.col("transaction_type"),
+                F.col("timestamp"),
+                F.col("status"),
+                F.col("payment_method"),
+                F.col("currency"),
+                
+                # Fields from the exploded 'item' struct
+                F.col("item.product_id").alias("item_product_id"),
+                F.col("item.product_name").alias("item_product_name"),
+                F.col("item.category").alias("item_category"),
+                F.col("item.quantity").alias("item_quantity"),
+                F.col("item.unit_price").alias("item_unit_price"),
+                
+                F.col("subtotal"),
+                F.col("tax"),
+                F.col("total"),
+                
+                # Flatten Billing Address
+                F.col("billing_address.street").alias("billing_street"),
+                F.col("billing_address.city").alias("billing_city"),
+                F.col("billing_address.state").alias("billing_state"),
+                F.col("billing_address.zip_code").alias("billing_zip"),
+                F.col("billing_address.country").alias("billing_country"),
+                
+                # Flatten Shipping Address
+                F.col("shipping_address.street").alias("shipping_street"),
+                F.col("shipping_address.city").alias("shipping_city"),
+                F.col("shipping_address.state").alias("shipping_state"),
+                F.col("shipping_address.zip_code").alias("shipping_zip"),
+                F.col("shipping_address.country").alias("shipping_country")
             )
-            print(f" Count of all completed purchases: {purchase_df.count()}")
+
+        print(f" Count of all completed purchases: {purchase_df.count()}")
             
-            trans_output = f"{output_path}/transactions"
-            print(f"Writing to: {trans_output}")
+        trans_output = f"{output_path}/transactions"
+        print(f"Writing to: {trans_output}")
             
-            purchase_df.coalesce(1).write.csv(
+        purchase_df.coalesce(1).write.csv(
                 trans_output,
                 mode="overwrite",
                 header=True
             )
-            print(purchase_df.head(10))
+        print(purchase_df.head(10))
             
     except AnalysisException:
         print(f"No transaction files found at {trans_input}, skipping...")
@@ -60,10 +92,24 @@ def run_etl(spark: SparkSession, input_path: str, output_path: str):
 
         if 'event_type' in user_df.columns:
             print('Starting user transformations: ')
-            user_activity_df = user_df.groupBy('user_id').agg(
-                  F.count('*').alias('event_count'),
-                  F.count(F.when(F.col('event_type')=='search', 1)).alias('search_count'),
-                  F.count(F.when(F.col('event_type')=='add_to_cart', 1)).alias('amount_added')
+
+            # Replaced aggregation with direct column selection based on your JSON schema            
+            # We select the specific columns found in your JSON to ensure clean output
+            # If a column (like 'quantity') is missing in some rows, Spark handles it gracefully
+            user_activity_df = user_df.select(
+                F.col("event_id"),
+                F.col("user_id"),
+                F.col("session_id"),
+                F.col("event_type"),
+                F.col("timestamp"),
+                F.col("page"),
+                F.col("device"),
+                F.col("browser"),
+                F.col("ip_address"),
+                F.col("country"),
+                F.col("city"),
+                F.col("product_id"),
+                F.col("quantity")
             )
             print(f" User activity records: {user_activity_df.count()}")
             
