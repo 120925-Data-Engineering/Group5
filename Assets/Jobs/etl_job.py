@@ -1,139 +1,120 @@
-"""
-StreamFlow ETL Job - PySpark Transformation Pipeline
-
-Reads JSON from landing zone, applies transformations, writes CSV to gold zone.
-
-Pattern: ./data/landing/*.json -> (This Job) -> ./data/gold/
-"""
 from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as F
-from pyspark.sql.window import Window
+from pyspark.sql.utils import AnalysisException # Imported to handle missing files gracefully
 import argparse
 from spark_session_factory import create_spark_session
 from pathlib import Path
 
-
 def run_etl(spark: SparkSession, input_path: str, output_path: str):
     """
     Main ETL pipeline: read -> transform -> write.
+    Separates logic by file pattern (transaction* vs user*).
     """
-    print('Reading json into a df for transformations: ')
-    df = spark.read.json(input_path)
-    cols = df.columns
-    print(f'Input path: {input_path}')
-
+    
+    # We assume input_path comes in as ".../*.json" or similar wildcard.
+    # We need to target specific file patterns to get separate DataFrames.
+    
     # --- LOGIC FOR TRANSACTIONS ---
-    if 'transaction_type' in cols:
-        print("Starting transaction transformations: ")
-        purchase_df = df.groupBy('user_id').agg(
-              F.count('*').alias('event_count'),
-              F.count(F.when(F.col('transaction_type')=='purchase', 1)).alias('purchase_count'),
-              F.count(F.when(F.col('status')=='completed', 1)).alias('completed_purhases')
-        )
-        print(f" Count of all completed purchases: {purchase_df.count()}")
+    # Construct specific path for transactions
+    trans_input = input_path.replace("*", "transaction*")
+    
+    print(f"Attempting to read transactions from: {trans_input}")
+    
+    try:
+        trans_df = spark.read.json(trans_input)
         
-        # 1. Define specific subfolder for this table
-        trans_output = f"{output_path}/transactions"
-        
-        # 2. Use coalesce(1) to force single file
-        # 3. Use overwrite mode on this specific subfolder
-        print(f"Writing to: {trans_output}")
-        purchase_df.coalesce(1).write.csv(
-            trans_output,
-            mode="overwrite",
-            header=True
-        )
-        print(purchase_df.head(10))
+        # specific check to ensure we actually have data and the column we expect
+        if 'transaction_type' in trans_df.columns:
+            print("Starting transaction transformations: ")
+            purchase_df = trans_df.groupBy('user_id').agg(
+                  F.count('*').alias('event_count'),
+                  F.count(F.when(F.col('transaction_type')=='purchase', 1)).alias('purchase_count'),
+                  F.count(F.when(F.col('status')=='completed', 1)).alias('completed_purchases')
+            )
+            print(f" Count of all completed purchases: {purchase_df.count()}")
+            
+            trans_output = f"{output_path}/transactions"
+            print(f"Writing to: {trans_output}")
+            
+            purchase_df.coalesce(1).write.csv(
+                trans_output,
+                mode="overwrite",
+                header=True
+            )
+            print(purchase_df.head(10))
+            
+    except AnalysisException:
+        print(f"No transaction files found at {trans_input}, skipping...")
+    except Exception as e:
+        print(f"Error processing transactions: {e}")
+
 
     # --- LOGIC FOR USER EVENTS ---
-    if 'event_type' in cols:  # Changed to elif to avoid "No matching schema" error on transaction files
-        print('Starting user transformations: ')
-        user_activity_df = df.groupBy('user_id').agg(
-              F.count('*').alias('event_count'),
-              F.count(F.when(F.col('event_type')=='search', 1)).alias('search_count'),
-              F.count(F.when(F.col('event_type')=='add_to_cart', 1)).alias('amount_added')
-        )
-        print(f" User activity records: {user_activity_df.count()}")
-        
-        # 1. Define specific subfolder for this table
-        user_output = f"{output_path}/user_events"
+    # Construct specific path for user events
+    user_input = input_path.replace("*", "user*")
+    
+    print(f"Attempting to read user events from: {user_input}")
+    
+    try:
+        user_df = spark.read.json(user_input)
 
-        # 2. Use coalesce(1) to force single file
-        # 3. Use overwrite mode (safe now because it's a dedicated folder)
-        print(f"Writing to: {user_output}")
-        user_activity_df.coalesce(1).write.csv(
-            user_output,
-            mode="overwrite",
-            header=True
-        )
-        print(user_activity_df.head(10))
+        if 'event_type' in user_df.columns:
+            print('Starting user transformations: ')
+            user_activity_df = user_df.groupBy('user_id').agg(
+                  F.count('*').alias('event_count'),
+                  F.count(F.when(F.col('event_type')=='search', 1)).alias('search_count'),
+                  F.count(F.when(F.col('event_type')=='add_to_cart', 1)).alias('amount_added')
+            )
+            print(f" User activity records: {user_activity_df.count()}")
+            
+            user_output = f"{output_path}/user_events"
+            print(f"Writing to: {user_output}")
+            
+            user_activity_df.coalesce(1).write.csv(
+                user_output,
+                mode="overwrite",
+                header=True
+            )
+            print(user_activity_df.head(10))
+            
+    except AnalysisException:
+        print(f"No user event files found at {user_input}, skipping...")
+    except Exception as e:
+        print(f"Error processing user events: {e}")
 
-    else:
-         print('No matching schema found.')
 
 if __name__ == "__main__":
-
-    #Copy pasted from ingest_kafka_to_landing but with different path
-        #Write to the directory
+    
+    # Setup paths
     BASE_DIR = Path(__file__).resolve().parent
-    LOADING_DIR = (BASE_DIR / ".." / "data" / "landing").resolve()
-    LANDING_DIR = (BASE_DIR / ".." / "data" / "gold").resolve()
-
-
-    # DONE: Create SparkSession, parse args, run ETL
+    
+    # Note: These defaults are relative to where the script is run
     parser = argparse.ArgumentParser(description="Spark Arguments")
-    #spark session arguments
-    parser.add_argument("--app_name",
-                         default="app_name")
+    parser.add_argument("--app_name", default="StreamFlow_ETL")
+    parser.add_argument("--master", default="local[*]")
+    parser.add_argument("--conf", action="append", default=[], metavar="KEY=VALUE")
     
-    parser.add_argument("--master",
-                         default="local[*]")
-    
-    #handle config overrides 
-    parser.add_argument("--conf",
-                         action="append",
-                         default=[],
-                         metavar="KEY=VALUE",
-                         help="Spark configurations"
-                         )
-
-    # input path, output path
-    #input_path: Landing zone path (e.g., '/opt/spark-data/landing/*.json')
+    # Input default assumes a wildcard structure
     parser.add_argument("--input_path", default='../assets/data/landing/*.json')
-                        #'../assets/data/landing/*.json') 
     parser.add_argument("--output_path", default="../assets/data/gold")
-    # parser.add_argument("--input_path", default=LOADING_DIR) 
-    # parser.add_argument("--output_path", default=LANDING_DIR)
 
     args = parser.parse_args()
     
     config_overrides = {}
-
     for c in args.conf:
-        if "=" not in c:
-            raise SystemExit(f"--conf must be KEY=VALUE\nInput: \"{c}\"")
+        if "=" not in c: continue
         key, value = c.split("=", 1)
-        key = key.strip()
-        if key == "":
-                raise SystemError(f"Empty conf key in: {c}")
-        if value == "":
-                raise SystemError(f"Empty conf value in: {c}")
-        config_overrides[key] = value
+        config_overrides[key.strip()] = value
 
-    if not config_overrides:
-        config_overrides = None
-
-    #This can be created with defaults
     spark_session = create_spark_session(
         app_name=args.app_name,
         master=args.master,
-        config_overrides=config_overrides
+        config_overrides=config_overrides if config_overrides else None
     )
 
-    #This can also run with defaults
     run_etl(
         spark_session,
-        input_path= args.input_path,
+        input_path=args.input_path,
         output_path=args.output_path
     )
 
