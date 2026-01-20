@@ -107,8 +107,33 @@ with DAG(
         )
         FILE_FORMAT = (FORMAT_NAME = STREAMFLOW_DW.BRONZE.JSON_FORMAT);
     """
-)
+    # loading raw user events to bronze layer then putting into silver layer
+    )
+    load_raw = SnowflakeOperator(
+        task_id="load_raw_events",
+        sql="COPY INTO RAW_USER_EVENTS (PAYLOAD) FROM @JSON_STAGE FILE_FORMAT=(FORMAT_NAME='JSON_FORMAT');",
+        snowflake_conn_id="snowflake_default",
+    )
+
+    merge_silver = SnowflakeOperator(
+        task_id="merge_silver_user_events",
+        sql="sql/merge_user_events.sql",  # external file with the MERGE
+        params={
+            "bronze_schema": "STREAMFLOW_DW.BRONZE",
+            "silver_schema": "STREAMFLOW_DW.SILVER",
+        },
+        snowflake_conn_id="snowflake_default",
+    )
+
+    build_gold = SnowflakeOperator(
+        task_id="build_gold_user_metrics",
+        sql="sql/gold_user_metrics.sql",
+        snowflake_conn_id="snowflake_default",
+    )
+
+
+
 
     #Task dependencies
     #copy_csv_into_snowflake
-    upload_to_stage >> load_raw_customers
+    upload_to_stage >> load_raw_customers >> load_raw >> merge_silver >> build_gold
