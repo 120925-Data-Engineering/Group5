@@ -18,7 +18,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 import glob
 
@@ -50,37 +50,60 @@ def load_to_snowflake(**context):
 
     # SnowflakeHook reads connection details from Airflow Connection 'snowflake_default'
     hook = SnowflakeHook(snowflake_conn_id=snow_conn)
-    conn = hook.get_conn()
-    cursor = conn.cursor()
+    # Inserting a try except block here for error handling throughout the process
+    try:
+        conn = hook.get_conn()
+        cursor = conn.cursor()
 
+        cursor.execute("USE WAREHOUSE COMPUTE_WH")
+        cursor.execute("USE DATABASE STREAMFLOW_DW")
+        cursor.execute("USE SCHEMA BRONZE")
 
-    cursor.execute("USE WAREHOUSE COMPUTE_WH")
-    cursor.execute("USE DATABASE STREAMFLOW_DW")
-    cursor.execute("USE SCHEMA BRONZE")
-
-    for pattern, table in CSV_TO_TABLE.items():
-        # Find all CSVs matching this pattern (e.g., user_events_001.csv, user_events_002.csv)
-        for csv_file in glob.glob(os.path.join(GOLD_ZONE_PATH, pattern)):
-            # PUT uploads local file to Snowflake internal stage
-            cursor.execute(f"PUT file://{csv_file} @CSV_STAGE AUTO_COMPRESS=TRUE OVERWRITE=TRUE")
+        for pattern, table in CSV_TO_TABLE.items():
+            # Find all CSVs matching this pattern (e.g., user_events_001.csv, user_events_002.csv)
+            for csv_file in glob.glob(os.path.join(GOLD_ZONE_PATH, pattern)):
+                # PUT uploads local file to Snowflake internal stage
+                try:
+                    cursor.execute(f"PUT file://{csv_file} @CSV_STAGE AUTO_COMPRESS=TRUE OVERWRITE=TRUE")
+                    print(f"Uploaded: {csv_file}")
+                except Exception as e:
+                    print(f"ERROR uploading {csv_file}: {e}")
+                    raise
         
-        # COPY INTO loads staged files into the Bronze table (inline CSV format)
-        cursor.execute(f"""
-            COPY INTO STREAMFLOW_DW.BRONZE.{table}
-            FROM @STREAMFLOW_DW.BRONZE.CSV_STAGE
-            FILE_FORMAT = (FORMAT_NAME = 'STREAMFLOW_DW.BRONZE.CSV_FORMAT')
-            ON_ERROR = 'CONTINUE'
-        """)
+            # COPY INTO loads staged files into the Bronze table (inline CSV format)
+            try: 
+                cursor.execute(f"""
+                    COPY INTO STREAMFLOW_DW.BRONZE.{table}
+                    FROM @STREAMFLOW_DW.BRONZE.CSV_STAGE
+                    FILE_FORMAT = (FORMAT_NAME = 'STREAMFLOW_DW.BRONZE.CSV_FORMAT')
+                    ON_ERROR = 'CONTINUE'
+                """)
+                print(f"COPY INTO completed for table: {table}")
+            except Exception as e:
+                print(f"ERROR during COPY INTO for table {table}: {e}")
+                raise
     
-    # Clean up staged files (REMOVE deletes files only, not the stage itself - stage persists for reuse)
-    cursor.execute("REMOVE @STREAMFLOW_DW.BRONZE.CSV_STAGE")
-    conn.commit()
-    cursor.close()
-    conn.close()
+        # Clean up staged files (REMOVE deletes files only, not the stage itself - stage persists for reuse)
+        cursor.execute("REMOVE @STREAMFLOW_DW.BRONZE.CSV_STAGE")
+        conn.commit()
+    except Exception as e:
+        print(f"FATAL ERROR in load_to_snowflake: {e}")
+        raise # This lets Airflow handle retries
+    finally:
+        try:
+            cursor.close()
+            conn.close()
+        except Exception:
+            pass
 
+default_args = {
+    "retries": 3,
+    "retry_delay": timedelta(minutes=2),
+}
 
 with DAG(
     dag_id='streamflow_warehouse_john',
+    default_args=default_args,
     start_date=datetime(2024, 1, 1),
     schedule_interval=None,  # Manually triggered
     catchup=False,
@@ -93,20 +116,92 @@ with DAG(
     )
     # putting into silver layer
 
-    merge_silver = SnowflakeOperator(
-        task_id="merge_silver_user_events",
-        sql="sql/merge_user_events.sql",  # external file with the MERGE
+    user_events_silver = SnowflakeOperator(
+        task_id="user_events_silver",
+        sql="sql/user_events_silver_data.sql",  # external file with the MERGE
         params={
             "bronze_schema": "STREAMFLOW_DW.BRONZE",
             "silver_schema": "STREAMFLOW_DW.SILVER",
         },
         snowflake_conn_id="snowflake_default",
     )
+    products_silver = SnowflakeOperator(
+    task_id="products_silver",
+    sql="sql/products_silver_data.sql",  # external MERGE file
+    params={
+        "bronze_schema": "STREAMFLOW_DW.BRONZE",
+        "silver_schema": "STREAMFLOW_DW.SILVER",
+    },
+    snowflake_conn_id="snowflake_default",
+)
+    customers_silver = SnowflakeOperator(
+    task_id="customers_silver",
+    sql="sql/customers_silver_data.sql",  # external MERGE file
+    params={
+        "bronze_schema": "STREAMFLOW_DW.BRONZE",
+        "silver_schema": "STREAMFLOW_DW.SILVER",
+    },
+    snowflake_conn_id="snowflake_default",
+)
+    transactions_silver = SnowflakeOperator(
+    task_id="transactions_silver",
+    sql="sql/transactions_silver_data.sql",  # external MERGE file
+    params={
+        "bronze_schema": "STREAMFLOW_DW.BRONZE",
+        "silver_schema": "STREAMFLOW_DW.SILVER",
+    },
+    snowflake_conn_id="snowflake_default",
+)
+    transaction_line_items_silver = SnowflakeOperator(
+    task_id="transaction_line_items_silver",
+    sql="sql/transaction_line_items_silver_data.sql",
+    params={
+        "silver_schema": "STREAMFLOW_DW.SILVER",
+    },
+    snowflake_conn_id="snowflake_default",
+)
+    dim_customer = SnowflakeOperator(
+    task_id="gold_dim_customer",
+    sql="sql/gold_dim_customer.sql",
+    snowflake_conn_id="snowflake_default",
+)
 
-    build_gold = SnowflakeOperator(
-        task_id="build_gold_user_metrics",
-        sql="sql/gold_user_metrics.sql",
-        snowflake_conn_id="snowflake_default",
-    )
+    dim_product = SnowflakeOperator(
+    task_id="gold_dim_product",
+    sql="sql/gold_dim_product.sql",
+    snowflake_conn_id="snowflake_default",
+)
 
-    load_task
+    dim_date = SnowflakeOperator(
+    task_id="gold_dim_date",
+    sql="sql/gold_dim_date.sql",
+    snowflake_conn_id="snowflake_default",
+)
+
+    fact_transactions = SnowflakeOperator(
+    task_id="gold_fact_transactions",
+    sql="sql/gold_fact_transactions.sql",
+    snowflake_conn_id="snowflake_default",
+)
+
+    fact_user_activity = SnowflakeOperator(
+    task_id="gold_fact_user_activity",
+    sql="sql/gold_fact_user_activity.sql",
+    snowflake_conn_id="snowflake_default",
+)
+
+    agg_daily_revenue = SnowflakeOperator(
+    task_id="gold_agg_daily_revenue",
+    sql="sql/gold_agg_daily_revenue.sql",
+    snowflake_conn_id="snowflake_default",
+)
+    # build_gold = SnowflakeOperator(
+    #     task_id="build_gold_user_metrics",
+    #     sql="sql/gold_user_metrics.sql",
+    #     snowflake_conn_id="snowflake_default",
+    # ) -- for the dependency if I use this -- build_gold
+
+    load_task >> user_events_silver >> products_silver >> customers_silver \
+    >> transactions_silver >> transaction_line_items_silver >> \
+    dim_customer >> dim_product >> dim_date >> fact_transactions >> \
+    fact_user_activity >> agg_daily_revenue
