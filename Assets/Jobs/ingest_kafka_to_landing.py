@@ -11,8 +11,8 @@ import time
 import os
 import argparse
 from pathlib import Path
-from airflow.models import TaskInstance
-from airflow.utils.session import create_session
+# from airflow.models import TaskInstance
+# from airflow.utils.session import create_session
 
 dag_id = ""
 task_id = ""
@@ -33,7 +33,7 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
     # DONE: Implement
     kafka_consumer = KafkaConsumer(
            topic, #Topic we are consuming from
-           bootstrap_servers=['kafka:9092'], #This needs to match the yaml file. Should change to var
+           bootstrap_servers=['localhost:9094'], #This needs to match the yaml file. Should change to var
            value_deserializer = lambda v: json.loads(v.decode('utf-8')),
            group_id = f"{topic}_id"
            )
@@ -73,18 +73,18 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
                 #Onnly if we were able to read and write
                 kafka_consumer.commit()
 
-                #Set XCom variable for spark to be able to pull             
-                with create_session() as session:
-                    ti = TaskInstance.get_task_instance(
-                        dag_id=dag_id,
-                        task_id=task_id,
-                        run_id=run_id,
-                        map_index = -1,
-                        session=session
-                    )
-                    if ti is None:
-                        raise RuntimeError(f"No TaskInstance found for dag_id={dag_id} task_id={task_id} run_id={run_id}")
-                    ti.xcom_push(key=f"{topic}_path", value=path, session=session)
+                # #Set XCom variable for spark to be able to pull             
+                # with create_session() as session:
+                #     ti = TaskInstance.get_task_instance(
+                #         dag_id=dag_id,
+                #         task_id=task_id,
+                #         run_id=run_id,
+                #         map_index = -1,
+                #         session=session
+                #     )
+                #     if ti is None:
+                #         raise RuntimeError(f"No TaskInstance found for dag_id={dag_id} task_id={task_id} run_id={run_id}")
+                #     ti.xcom_push(key=f"{topic}_path", value=path, session=session)
 
         except IOError as e:
                     print(f"Failed to write to {path}")
@@ -94,6 +94,7 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
         print("There are no messages")
             
     print("Kafka Consumer Finished")
+    kafka_consumer.commit()
     kafka_consumer.close()
     #Return the amount of messages processed
     return len(batch_messages)
@@ -101,10 +102,10 @@ def consume_batch(topic: str, batch_duration_sec: int, output_path: str) -> int:
 
 if __name__ == "__main__":
     #Write to the directory
-    # BASE_DIR = Path(__file__).resolve().parent
-    # LANDING_DIR = (BASE_DIR / ".." / "data" / "landing").resolve()
-    BASE_DIR = '/opt'
-    LANDING_DIR = f"{BASE_DIR}/spark-data/landing"
+    BASE_DIR = Path(__file__).resolve().parent
+    LANDING_DIR = (BASE_DIR / ".." / "data" / "landing").resolve()
+    # BASE_DIR = '/opt'
+    # LANDING_DIR = f"{BASE_DIR}/spark-data/landing"
 
     # DONE: Parse args and call consume_batch
     parser = argparse.ArgumentParser(description="Kafka Arguments")
