@@ -4,6 +4,11 @@ set -euo pipefail
 # This script now takes in arguments for the topic so we don't need 2
 # It takes in jinja variables because I am trying to use xcom variables so you don't need *.json
  
+# Hello Pedro, run these commands to run the script
+# bash run_consumer.sh transaction_events 10
+# bash run_consumer.sh user_events 10
+# NOTE: -- make sure the docker and the producers are running
+
 #Optional argument of time
 # default to 10 seconds if no time argument give
 
