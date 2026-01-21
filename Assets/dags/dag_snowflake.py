@@ -24,7 +24,10 @@ import glob
 
 # Path where Spark ETL writes Gold Zone CSVs (shared Docker volume)
 GOLD_ZONE_PATH = '/opt/spark-data/gold'
-snow_conn = "snowflake_connection"
+# this used to be snow_conn = "snowflake_connection"
+# I am changing it to "snowflake_default" to be consistent with
+# snowflake_conn_id because there may be inconsistencies with it if I don't
+snow_conn = "snowflake_default"
 
 # Maps CSV file patterns to their corresponding Bronze table names
 CSV_TO_TABLE = {
@@ -98,7 +101,7 @@ def load_to_snowflake(**context):
 
 default_args = {
     "retries": 3,
-    "retry_delay": timedelta(minutes=2),
+    "retry_delay": timedelta(minutes=1),
 }
 
 with DAG(
@@ -114,8 +117,8 @@ with DAG(
         task_id='load_to_snowflake',
         python_callable=load_to_snowflake,
     )
-    # putting into silver layer
 
+    # Many tasks: putting into silver layer
     user_events_silver = SnowflakeOperator(
         task_id="user_events_silver",
         sql="sql/user_events_silver_data.sql",  # external file with the MERGE
@@ -160,39 +163,64 @@ with DAG(
     },
     snowflake_conn_id="snowflake_default",
 )
+    # Many tasks to create the gold layer
     dim_customer = SnowflakeOperator(
     task_id="gold_dim_customer",
     sql="sql/gold_dim_customer.sql",
+    params={
+        "silver_schema": "STREAMFLOW_DW.SILVER",
+        "gold_schema": "STREAMFLOW_DW.GOLD"
+    },
     snowflake_conn_id="snowflake_default",
 )
 
     dim_product = SnowflakeOperator(
     task_id="gold_dim_product",
     sql="sql/gold_dim_product.sql",
+    params={
+        "silver_schema": "STREAMFLOW_DW.SILVER",
+        "gold_schema": "STREAMFLOW_DW.GOLD"
+    },
     snowflake_conn_id="snowflake_default",
 )
 
     dim_date = SnowflakeOperator(
     task_id="gold_dim_date",
     sql="sql/gold_dim_date.sql",
+    params={
+        "silver_schema": "STREAMFLOW_DW.SILVER",
+        "gold_schema": "STREAMFLOW_DW.GOLD"
+    },
     snowflake_conn_id="snowflake_default",
 )
 
     fact_transactions = SnowflakeOperator(
     task_id="gold_fact_transactions",
     sql="sql/gold_fact_transactions.sql",
+    params={
+        "silver_schema": "STREAMFLOW_DW.SILVER",
+        "gold_schema": "STREAMFLOW_DW.GOLD"
+    },
     snowflake_conn_id="snowflake_default",
 )
 
     fact_user_activity = SnowflakeOperator(
     task_id="gold_fact_user_activity",
     sql="sql/gold_fact_user_activity.sql",
+    params={
+        "silver_schema": "STREAMFLOW_DW.SILVER",
+        "gold_schema": "STREAMFLOW_DW.GOLD"
+    },
     snowflake_conn_id="snowflake_default",
 )
 
     agg_daily_revenue = SnowflakeOperator(
     task_id="gold_agg_daily_revenue",
     sql="sql/gold_agg_daily_revenue.sql",
+    params={
+        "silver_schema": "STREAMFLOW_DW.SILVER",
+        "gold_schema": "STREAMFLOW_DW.GOLD"
+    },
     snowflake_conn_id="snowflake_default",
 )
     # build_gold = SnowflakeOperator(
@@ -203,5 +231,5 @@ with DAG(
 
     load_task >> user_events_silver >> products_silver >> customers_silver \
     >> transactions_silver >> transaction_line_items_silver >> \
-    dim_customer >> dim_product >> dim_date >> fact_transactions >> \
+    [dim_customer, dim_product, dim_date] >> fact_transactions >> \
     fact_user_activity >> agg_daily_revenue
