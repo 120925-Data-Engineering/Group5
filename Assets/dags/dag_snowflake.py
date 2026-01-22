@@ -15,6 +15,7 @@ Prerequisites:
 # /opt/spark-data/gold
 
 from airflow import DAG
+from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
 from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
@@ -27,8 +28,9 @@ GOLD_ZONE_PATH = '/opt/spark-data/gold'
 # this used to be snow_conn = "snowflake_connection"
 # I am changing it to "snowflake_default" to be consistent with
 # snowflake_conn_id because there may be inconsistencies with it if I don't
-snow_conn = "snowflake_default"
-
+snow_conn = "snowflake_connection"
+BASE_DIR = '/opt'
+JOBS_DIR = f"{BASE_DIR}/spark-jobs"
 # Maps CSV file patterns to their corresponding Bronze table names
 CSV_TO_TABLE = {
     'user_events/part-*.csv': 'raw_user_events',
@@ -105,131 +107,33 @@ default_args = {
 }
 
 with DAG(
-    dag_id='streamflow_warehouse_john',
+    dag_id='dag_snowflake',
     default_args=default_args,
     start_date=datetime(2024, 1, 1),
     schedule_interval=None,  # Manually triggered
     catchup=False,
 ) as dag:
-    
+    # Spark ETL job
+    etl_job = BashOperator(
+        task_id='etl_job',
+        bash_command=(
+            f"spark-submit "
+            f"{JOBS_DIR}/etl_job.py "
+            f"--input_path '{BASE_DIR}/spark-data/landing/*.json' "
+            f"--output_path {BASE_DIR}/spark-data/gold"
+        ),
+    )
     # Single task: load all Gold Zone CSVs to Snowflake Bronze
     load_task = PythonOperator(
         task_id='load_to_snowflake',
         python_callable=load_to_snowflake,
     )
 
-    # Many tasks: putting into silver layer
-    user_events_silver = SnowflakeOperator(
-        task_id="user_events_silver",
-        sql="sql/user_events_silver_data.sql",  # external file with the MERGE
-        params={
-            "bronze_schema": "STREAMFLOW_DW.BRONZE",
-            "silver_schema": "STREAMFLOW_DW.SILVER",
-        },
-        snowflake_conn_id="snowflake_default",
+    # Trigger the root Snowflake task
+    trigger_root = SnowflakeOperator(
+        task_id="trigger_root_task",
+        sql="EXECUTE TASK STREAMFLOW_DW.SILVER.TASK_USER_EVENTS_SILVER;",
+        snowflake_conn_id=snow_conn,
     )
-    products_silver = SnowflakeOperator(
-    task_id="products_silver",
-    sql="sql/products_silver_data.sql",  # external MERGE file
-    params={
-        "bronze_schema": "STREAMFLOW_DW.BRONZE",
-        "silver_schema": "STREAMFLOW_DW.SILVER",
-    },
-    snowflake_conn_id="snowflake_default",
-)
-    customers_silver = SnowflakeOperator(
-    task_id="customers_silver",
-    sql="sql/customers_silver_data.sql",  # external MERGE file
-    params={
-        "bronze_schema": "STREAMFLOW_DW.BRONZE",
-        "silver_schema": "STREAMFLOW_DW.SILVER",
-    },
-    snowflake_conn_id="snowflake_default",
-)
-    transactions_silver = SnowflakeOperator(
-    task_id="transactions_silver",
-    sql="sql/transactions_silver_data.sql",  # external MERGE file
-    params={
-        "bronze_schema": "STREAMFLOW_DW.BRONZE",
-        "silver_schema": "STREAMFLOW_DW.SILVER",
-    },
-    snowflake_conn_id="snowflake_default",
-)
-    transaction_line_items_silver = SnowflakeOperator(
-    task_id="transaction_line_items_silver",
-    sql="sql/transaction_line_items_silver_data.sql",
-    params={
-        "silver_schema": "STREAMFLOW_DW.SILVER",
-    },
-    snowflake_conn_id="snowflake_default",
-)
-    # Many tasks to create the gold layer
-    dim_customer = SnowflakeOperator(
-    task_id="gold_dim_customer",
-    sql="sql/gold_dim_customer.sql",
-    params={
-        "silver_schema": "STREAMFLOW_DW.SILVER",
-        "gold_schema": "STREAMFLOW_DW.GOLD"
-    },
-    snowflake_conn_id="snowflake_default",
-)
 
-    dim_product = SnowflakeOperator(
-    task_id="gold_dim_product",
-    sql="sql/gold_dim_product.sql",
-    params={
-        "silver_schema": "STREAMFLOW_DW.SILVER",
-        "gold_schema": "STREAMFLOW_DW.GOLD"
-    },
-    snowflake_conn_id="snowflake_default",
-)
-
-    dim_date = SnowflakeOperator(
-    task_id="gold_dim_date",
-    sql="sql/gold_dim_date.sql",
-    params={
-        "silver_schema": "STREAMFLOW_DW.SILVER",
-        "gold_schema": "STREAMFLOW_DW.GOLD"
-    },
-    snowflake_conn_id="snowflake_default",
-)
-
-    fact_transactions = SnowflakeOperator(
-    task_id="gold_fact_transactions",
-    sql="sql/gold_fact_transactions.sql",
-    params={
-        "silver_schema": "STREAMFLOW_DW.SILVER",
-        "gold_schema": "STREAMFLOW_DW.GOLD"
-    },
-    snowflake_conn_id="snowflake_default",
-)
-
-    fact_user_activity = SnowflakeOperator(
-    task_id="gold_fact_user_activity",
-    sql="sql/gold_fact_user_activity.sql",
-    params={
-        "silver_schema": "STREAMFLOW_DW.SILVER",
-        "gold_schema": "STREAMFLOW_DW.GOLD"
-    },
-    snowflake_conn_id="snowflake_default",
-)
-
-    agg_daily_revenue = SnowflakeOperator(
-    task_id="gold_agg_daily_revenue",
-    sql="sql/gold_agg_daily_revenue.sql",
-    params={
-        "silver_schema": "STREAMFLOW_DW.SILVER",
-        "gold_schema": "STREAMFLOW_DW.GOLD"
-    },
-    snowflake_conn_id="snowflake_default",
-)
-    # build_gold = SnowflakeOperator(
-    #     task_id="build_gold_user_metrics",
-    #     sql="sql/gold_user_metrics.sql",
-    #     snowflake_conn_id="snowflake_default",
-    # ) -- for the dependency if I use this -- build_gold
-
-    load_task >> user_events_silver >> products_silver >> customers_silver \
-    >> transactions_silver >> transaction_line_items_silver >> \
-    [dim_customer, dim_product, dim_date] >> fact_transactions >> \
-    fact_user_activity >> agg_daily_revenue
+    etl_job >> load_task >> trigger_root
