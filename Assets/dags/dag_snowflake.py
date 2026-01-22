@@ -1,6 +1,7 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.snowflake.hooks.snowflake import SnowflakeHook
+from airflow.providers.snowflake.operators.snowflake import SnowflakeOperator
 from datetime import datetime
 import os
 import glob
@@ -17,6 +18,62 @@ CSV_TO_TABLE = {
     'products*.csv': 'raw_products',
     'customers*.csv': 'raw_customers',
 }
+
+silver_transformation_sql = """
+    MERGE INTO STREAMFLOW_DW.SILVER.stg_transactions AS target
+    USING (
+        SELECT 
+            transaction_id, user_id, transaction_type,
+            CAST(transaction_ts AS TIMESTAMP) AS transaction_ts,
+            status, payment_method, currency, item_product_id,
+            item_product_name, item_category,
+            CAST(item_quantity AS INTEGER) AS item_quantity,
+            CAST(item_unit_price AS DECIMAL(18, 2)) AS item_unit_price,
+            CAST(subtotal AS DECIMAL(18, 2)) AS subtotal,
+            CAST(tax AS DECIMAL(18, 2)) AS tax,
+            CAST(total AS DECIMAL(18, 2)) AS total,
+            billing_street, billing_city, billing_state,
+            billing_zip, billing_country, shipping_street,
+            shipping_city, shipping_state, shipping_zip, shipping_country
+        FROM STREAMFLOW_DW.BRONZE.raw_transactions
+    ) AS source
+    ON target.transaction_id = source.transaction_id
+    WHEN NOT MATCHED THEN
+        INSERT (
+            transaction_id, user_id, transaction_type, transaction_ts, status, 
+            payment_method, currency, item_product_id, item_product_name, item_category, 
+            item_quantity, item_unit_price, subtotal, tax, total, 
+            billing_street, billing_city, billing_state, billing_zip, billing_country, 
+            shipping_street, shipping_city, shipping_state, shipping_zip, shipping_country
+        )
+        VALUES (
+            source.transaction_id, source.user_id, source.transaction_type, source.transaction_ts, source.status, 
+            source.payment_method, source.currency, source.item_product_id, source.item_product_name, source.item_category, 
+            source.item_quantity, source.item_unit_price, source.subtotal, source.tax, source.total, 
+            source.billing_street, source.billing_city, source.billing_state, source.billing_zip, source.billing_country, 
+            source.shipping_street, source.shipping_city, source.shipping_state, source.shipping_zip, source.shipping_country
+        );
+
+    MERGE INTO STREAMFLOW_DW.SILVER.stg_user_events AS target
+    USING (
+        SELECT 
+            event_id, user_id, session_id, event_type,
+            CAST(event_ts AS TIMESTAMP) AS event_ts,
+            page, device, browser, ip_address, country, city, product_id,
+            CAST(quantity AS INTEGER) AS quantity
+        FROM STREAMFLOW_DW.BRONZE.raw_user_events
+    ) AS source
+    ON target.event_id = source.event_id
+    WHEN NOT MATCHED THEN
+        INSERT (
+            event_id, user_id, session_id, event_type, event_ts, 
+            page, device, browser, ip_address, country, city, product_id, quantity
+        )
+        VALUES (
+            source.event_id, source.user_id, source.session_id, source.event_type, source.event_ts, 
+            source.page, source.device, source.browser, source.ip_address, source.country, source.city, source.product_id, source.quantity
+        );
+"""
 
 
 def load_to_snowflake(**context):
@@ -80,9 +137,19 @@ with DAG(
     catchup=False,
 ) as dag:
     
-    load_task = PythonOperator(
+    load_csv_into_bronze = PythonOperator(
         task_id='load_to_snowflake',
         python_callable=load_to_snowflake,
     )
 
-    load_task
+    load_bronze_into_silver = SnowflakeOperator(
+        task_id='load_bronze_into_silver',
+        snowflake_conn_id=snow_conn,
+        sql=silver_transformation_sql,
+        warehouse='COMPUTE_WH', # Ensure warehouse is specified if not in connection
+        database='STREAMFLOW_DW',
+        schema='SILVER'
+    )
+
+
+    load_csv_into_bronze >> load_bronze_into_silver
