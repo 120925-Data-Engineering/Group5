@@ -1,43 +1,53 @@
-"""
-StreamFlow Analytics Platform - Main Orchestration DAG
-
-Orchestrates: Kafka Ingest -> Spark ETL -> Validation
-"""
 from airflow import DAG
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 from pathlib import Path
+import shutil
+import os
 
 default_args = {
     'owner': 'student',
-    # TODO: Add retry logic, email alerts, etc.
     'retries': 3,
     'retry_delay': timedelta(minutes=1)
 }
-# BASE_DIR = Path(__file__).resolve().parent.parent   # Assets folder
 
-# rewriting the directories to match the airflow directory in docker!!!!!!
+# rewriting the directories to match the airflow directory in docker
 BASE_DIR = '/opt'
 JOBS_DIR = f"{BASE_DIR}/spark-jobs"
+KAFKA_TIMER = 10 
 
-KAFKA_TIMER = 30 #Argument for bash scripts for how long they run for
-
-# Creating a function to validate output in the gold zone
 def validate_outputs(**context):
     gold_dir = Path(f"{BASE_DIR}/spark-data/gold")
-    
-    # Changed .glob() to .rglob() to search RECURSIVELY in subfolders
     files = list(gold_dir.rglob("*.csv"))
 
     if not files:
-        # Added debug info to show where it looked
         raise FileNotFoundError(f"No CSV files found in {gold_dir} or its subfolders.")
 
     print(f"Validation successful. Found {len(files)} files:")
     for f in files:
-        # Prints path relative to gold folder (e.g. 'user_events/part-000.csv')
         print(f" - {f.relative_to(gold_dir)}")
+
+def archive_landing_data(**context):
+    """Moves processed JSON files from Landing to Landing/processed."""
+    landing_dir = Path(f"{BASE_DIR}/spark-data/landing")
+    processed_dir = landing_dir / "processed"
+    
+    # Create processed directory if it doesn't exist
+    processed_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Find all JSON files in the landing root
+    files = list(landing_dir.glob("*.json"))
+    
+    if not files:
+        print("No files to archive.")
+        return
+
+    print(f"Moving {len(files)} files to {processed_dir}...")
+    for f in files:
+        # Move file to processed folder
+        shutil.move(str(f), processed_dir / f.name)
+
 
 with DAG(
     dag_id='streamflow_main',
@@ -47,28 +57,15 @@ with DAG(
     catchup=False,
 ) as dag:
     
-    # DONE: Define tasks
-    # - ingest_kafka: Run ingest_kafka_to_landing.py
-    # - spark_etl: spark-submit etl_job.py
-    # - validate: Check output files
-
-    ##start producers(?)
-    
-    #kafka ingestion task
-    # User events
+    # Kafka ingestion tasks
     kafka_user_events = BashOperator(
         task_id="ingest_user_events",
-        #bash_command=f"bash {JOBS_DIR}/user_consumer.sh {KAFKA_TIMER}",
         bash_command=f"bash {JOBS_DIR}/run_consumer.sh transaction_events {KAFKA_TIMER}")
 
-    # Transaction events
     kafka_transaction_events = BashOperator(
         task_id="ingest_transaction_events",
         bash_command=f"bash {JOBS_DIR}/run_consumer.sh user_events {KAFKA_TIMER}"
     )
-    # These set xcom variables for the new json files it created
-    # xcom(k,v) = (f"{topic}_json", f"{filename}")
-    # We would pass in {topic}_json as the --input_path
 
     # Spark ETL job
     etl_job = BashOperator(
@@ -81,12 +78,17 @@ with DAG(
         ),
     )
     
-    # Checks to make sure gold zone received the CSV files
+    # Check outputs
     validate_outputs_task = PythonOperator(
-        task_id = 'validate_outputs',
-        python_callable = validate_outputs,
+        task_id='validate_outputs',
+        python_callable=validate_outputs,
     )
 
+    # Archive inputs
+    archive_task = PythonOperator(
+        task_id='archive_landing_files',
+        python_callable=archive_landing_data,
+    )
 
-    # DONE: Set dependencies
-    [kafka_user_events, kafka_transaction_events] >> etl_job >> validate_outputs_task
+    # Set dependencies
+    [kafka_user_events, kafka_transaction_events] >> etl_job >> validate_outputs_task >> archive_task
