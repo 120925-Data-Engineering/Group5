@@ -9,11 +9,12 @@ USAGE EXAMPLES:
 1. REAL-TIME MODE (default) - Continuous streaming with delay:
    python transaction_events_producer.py
 
-2. BULK MODE - Generate 10,000 transactions as fast as possible:
+2. BULK MODE - Generate 10,000 historical transactions (3 months back) as fast as possible:
    python transaction_events_producer.py --bulk --count 10000
 
-3. BULK + CONTINUE - Generate 10k bulk then stream:
+3. BULK + CONTINUE - Generate 10k bulk then stream with custom interval:
    python transaction_events_producer.py --bulk --count 10000 --continue-after
+   python transaction_events_producer.py --bulk --count 10000 --continue-after --interval 1.0
 
 4. CUSTOM INTERVAL - Slower/faster streaming:
    python transaction_events_producer.py --interval 1.0  # 1 event/sec
@@ -34,10 +35,12 @@ import json
 import time
 import random
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from faker import Faker
 from kafka import KafkaProducer
 
+# Historical data configuration for bulk mode
+HISTORICAL_MONTHS = 3  # How far back to generate historical data
 
 fake = Faker()
 
@@ -90,8 +93,13 @@ def generate_line_item():
     }
 
 
-def generate_transaction_event():
-    """Generate a single mock transaction event."""
+def generate_transaction_event(event_timestamp=None):
+    """Generate a single mock transaction event.
+    
+    Args:
+        event_timestamp: Optional datetime for the event. If None, uses current UTC time.
+                        Used for generating historical data in bulk mode.
+    """
     user_id = random.choice(USER_POOL)  # Select from shared pool for joinability
     transaction_type = random.choices(
         TRANSACTION_TYPES, 
@@ -111,11 +119,15 @@ def generate_transaction_event():
         original_transaction_id = fake.uuid4()
         total = -total  # Negative amount for refunds
     
+    # Use provided timestamp or current time
+    if event_timestamp is None:
+        event_timestamp = datetime.utcnow()
+    
     event = {
         "transaction_id": fake.uuid4(),
         "user_id": user_id,
         "transaction_type": transaction_type,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": event_timestamp.isoformat() + "Z",
         "status": random.choices(STATUSES, weights=[0.05, 0.88, 0.05, 0.02])[0],
         "payment_method": random.choice(PAYMENT_METHODS),
         "currency": "USD",
@@ -156,20 +168,19 @@ def create_producer(bootstrap_servers):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate mock transaction events to Kafka")
-    #Changed from 9092 to 9094
-    parser.add_argument("--bootstrap-servers", default="localhost:9094", help="Kafka bootstrap servers")
+    parser.add_argument("--bootstrap-servers", default="localhost:9092", help="Kafka bootstrap servers")
     parser.add_argument("--topic", default="transaction_events", help="Kafka topic name")
-    parser.add_argument("--interval", type=float, default=2.0, help="Seconds between events (ignored in bulk mode)")
+    parser.add_argument("--interval", type=float, default=2.0, help="Seconds between events (used in real-time mode and continue-after)")
     parser.add_argument("--count", type=int, default=None, help="Number of events to generate (infinite if not set)")
-    parser.add_argument("--bulk", action="store_true", help="Bulk mode: generate events as fast as possible (no delay)")
-    parser.add_argument("--continue-after", action="store_true", help="After bulk count reached, continue in real-time mode")
+    parser.add_argument("--bulk", action="store_true", help="Bulk mode: generate historical events (3 months back) as fast as possible")
+    parser.add_argument("--continue-after", action="store_true", help="After bulk count reached, continue in real-time mode with --interval")
     args = parser.parse_args()
     
     producer = create_producer(args.bootstrap_servers)
     print(f"Connected to Kafka at {args.bootstrap_servers}")
     print(f"Publishing to topic: {args.topic}")
     if args.bulk:
-        print(f"Mode: BULK (max speed)")
+        print(f"Mode: BULK (max speed, {HISTORICAL_MONTHS}-month historical data)")
         if args.count:
             print(f"Target: {args.count:,} transactions")
     else:
@@ -181,9 +192,26 @@ def main():
     bulk_complete = False
     start_time = time.time()
     
+    # For bulk mode, pre-calculate the historical time range
+    # Events will be distributed evenly across the past HISTORICAL_MONTHS months
+    if args.bulk and args.count:
+        end_timestamp = datetime.utcnow()
+        start_timestamp = end_timestamp - timedelta(days=HISTORICAL_MONTHS * 30)
+        # Calculate seconds per event to distribute evenly
+        total_seconds = (end_timestamp - start_timestamp).total_seconds()
+        seconds_per_event = total_seconds / args.count
+    
     try:
         while args.count is None or event_count < args.count or (bulk_complete and args.continue_after):
-            event = generate_transaction_event()
+            # Determine timestamp for this event
+            if args.bulk and not bulk_complete and args.count:
+                # Generate historical timestamp spread across 3 months
+                event_timestamp = start_timestamp + timedelta(seconds=event_count * seconds_per_event)
+            else:
+                # Real-time mode: use current time
+                event_timestamp = None
+            
+            event = generate_transaction_event(event_timestamp)
             key = event["user_id"]
             
             producer.send(args.topic, key=key, value=event)
@@ -191,11 +219,11 @@ def main():
             total_revenue += event["total"]
             
             # Progress logging
-            if args.bulk and event_count % 1000 == 0:
+            if args.bulk and not bulk_complete and event_count % 1000 == 0:
                 elapsed = time.time() - start_time
                 rate = event_count / elapsed
                 print(f"[BULK] {event_count:,} transactions | ${total_revenue:,.2f} revenue | {rate:.0f}/sec")
-            elif not args.bulk:
+            elif not args.bulk or bulk_complete:
                 status_icon = "+" if event["total"] > 0 else "-"
                 print(f"[{event_count}] {event['transaction_type']:12} | {status_icon}${abs(event['total']):>8.2f} | {len(event['line_items'])} items | {event['status']}")
             
@@ -207,6 +235,7 @@ def main():
                 print(f"BULK COMPLETE: {event_count:,} transactions in {elapsed:.1f}s")
                 print(f"Total Revenue: ${total_revenue:,.2f}")
                 print(f"Rate: {event_count/elapsed:.0f} transactions/sec")
+                print(f"Historical data range: {start_timestamp.isoformat()}Z to {end_timestamp.isoformat()}Z")
                 print(f"{'='*50}")
                 if args.continue_after:
                     print(f"Continuing in real-time mode (interval: {args.interval}s)...")

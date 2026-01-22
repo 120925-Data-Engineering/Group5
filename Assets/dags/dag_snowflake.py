@@ -79,7 +79,7 @@ def load_to_snowflake(**context):
 
 
 with DAG(
-    dag_id='streamflow_warehouse_john',
+    dag_id='phase_2',
     start_date=datetime(2024, 1, 1),
     schedule_interval=None,  # Manually triggered
     catchup=False,
